@@ -32,3 +32,11 @@ linux: mod
 windows: mod
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(BUILD_CMD) -o $(OUTPUT).exe
 	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_windows_amd64.zip $(OUTPUT).exe
+
+test:
+	go test -cover -v ./pkg/...
+
+e2e: build
+	which kind ginkgo > /dev/null
+	kind get kubeconfig > "$(CURDIR)/.config.yml"
+	KUBECONFIG="$(CURDIR)/.config.yml" ginkgo -r ./e2e

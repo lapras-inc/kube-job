@@ -1,2 +1,4 @@
 vendor
 bin
+.config.yml
+kube-job
