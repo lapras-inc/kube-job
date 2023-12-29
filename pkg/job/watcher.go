@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"github.com/spf13/viper"
 	"io"
 	"os"
 	"strconv"
@@ -42,12 +43,42 @@ func (w *Watcher) Watch(job *v1.Job, ctx context.Context) error {
 	currentPodList := []corev1.Pod{}
 retry:
 	for {
+		var currentPodNames []string
+		for _, pod := range currentPodList {
+			currentPodNames = append(currentPodNames, pod.Name)
+		}
+		log.WithContext(ctx).WithFields(log.Fields{
+			"job":             job.Name,
+			"currentPodNames": currentPodNames,
+		}).Info("Watch continue retry:")
+
 		newPodList, err := w.FindPods(ctx, job)
+		var newPodNames []string
+		if err == nil {
+			for _, pod := range newPodList {
+				newPodNames = append(newPodNames, pod.Name)
+			}
+		}
+		log.WithContext(ctx).WithFields(log.Fields{
+			"job":         job.Name,
+			"newPodNames": newPodNames,
+			"err":         err,
+		}).Debug("FindPods")
 		if err != nil {
 			return err
 		}
 
 		incrementalPodList := diffPods(currentPodList, newPodList)
+		var incrementalPodNames []string
+		for _, pod := range incrementalPodList {
+			incrementalPodNames = append(incrementalPodNames, pod.Name)
+		}
+		log.WithContext(ctx).WithFields(log.Fields{
+			"job":                 job.Name,
+			"currentPodNames":     currentPodNames,
+			"newPodNames":         newPodNames,
+			"incrementalPodNames": incrementalPodNames,
+		}).Debug("diffPods")
 		go w.WatchPods(ctx, incrementalPodList)
 
 		time.Sleep(1 * time.Second)
@@ -58,14 +89,28 @@ retry:
 
 // WatchPods gets wait to start pod and tail the logs.
 func (w *Watcher) WatchPods(ctx context.Context, pods []corev1.Pod) error {
+	log.WithContext(ctx).WithFields(log.Fields{
+		"pods": pods,
+	}).Debug("WatchPods start")
+
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(pods))
 
 	for _, pod := range pods {
+		log.WithContext(ctx).WithFields(log.Fields{
+			"pod.Name": pod.Name,
+		}).Debug("range pod")
 		wg.Add(1)
 		go func(p corev1.Pod) {
+			log.WithContext(ctx).WithFields(log.Fields{
+				"pod.Name": p.Name,
+			}).Debug("go func")
 			defer wg.Done()
 			startedPod, err := w.WaitToStartPod(ctx, p)
+			log.WithContext(ctx).WithFields(log.Fields{
+				"startedPod.Name": startedPod.Name,
+				"err":             err,
+			}).Debug("WaitToStartPod finished")
 			if err != nil {
 				errCh <- err
 				return
@@ -80,7 +125,15 @@ func (w *Watcher) WatchPods(ctx context.Context, pods []corev1.Pod) error {
 				Param("follow", strconv.FormatBool(true)).
 				Param("container", w.Container).
 				Param("timestamps", strconv.FormatBool(false))
+			log.WithContext(ctx).WithFields(log.Fields{
+				"startedPod.Name": startedPod.Name,
+				"request":         request,
+			}).Debug("readStreamLog start")
 			err = readStreamLog(ctx, request, startedPod)
+			log.WithContext(ctx).WithFields(log.Fields{
+				"startedPod.Name": startedPod.Name,
+				"err":             err,
+			}).Debug("readStreamLog finished")
 			errCh <- err
 		}(pod)
 	}
@@ -89,10 +142,15 @@ func (w *Watcher) WatchPods(ctx context.Context, pods []corev1.Pod) error {
 	case err := <-errCh:
 		if err != nil {
 			log.Error(err)
+			log.WithContext(ctx).WithFields(log.Fields{
+				"err": err,
+			}).Debug("WatchPods error")
 			return err
 		}
 	}
+	log.WithContext(ctx).Debug("WatchPods wait")
 	wg.Wait()
+	log.WithContext(ctx).Debug("WatchPods finished")
 	return nil
 }
 
@@ -113,12 +171,25 @@ func (w *Watcher) FindPods(ctx context.Context, job *v1.Job) ([]corev1.Pod, erro
 // Because the job does not start immediately after call kubernetes API.
 // So we have to wait to start the pod, before watch logs.
 func (w *Watcher) WaitToStartPod(ctx context.Context, pod corev1.Pod) (corev1.Pod, error) {
+	log.WithContext(ctx).WithFields(log.Fields{
+		"pod": pod,
+	}).Debug("WaitToStartPod start")
+
 retry:
 	for {
 		targetPod, err := w.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		log.WithContext(ctx).WithFields(log.Fields{
+			"pod.Name": pod.Name,
+			"err":      err,
+		}).Debug("get pod")
 		if err != nil {
 			return pod, err
 		}
+
+		log.WithContext(ctx).WithFields(log.Fields{
+			"targetPod.Name":         targetPod.Name,
+			"targetPod.Status.Phase": targetPod.Status.Phase,
+		}).Debug("pod status")
 
 		if !isPendingPod(*targetPod) {
 			return *targetPod, nil
@@ -152,6 +223,18 @@ func readStreamLog(ctx context.Context, request *restclient.Request, pod corev1.
 		return err
 	}
 	defer readCloser.Close()
+	if viper.GetBool("verbose") {
+		buf := new(strings.Builder)
+		_, err := io.Copy(buf, readCloser)
+		if err != nil {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"pod.Name": pod.Name,
+			"log":      buf.String(),
+		}).Debug("readStreamLog")
+		return nil
+	}
 	_, err = io.Copy(os.Stdout, readCloser)
 	return err
 }

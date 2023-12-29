@@ -45,8 +45,11 @@ func runJobCmd() *cobra.Command {
 
 func (r *runJob) run(cmd *cobra.Command, args []string) {
 	config, verbose := generalConfig()
-	log.SetLevel(log.DebugLevel)
-	if !verbose {
+	if verbose {
+		log.SetLevel(log.TraceLevel)
+		log.SetFormatter(&log.JSONFormatter{})
+		log.SetReportCaller(true)
+	} else {
 		log.SetLevel(log.WarnLevel)
 	}
 	if r.cleanup != job.All.String() && r.cleanup != job.Succeeded.String() && r.cleanup != job.Failed.String() {

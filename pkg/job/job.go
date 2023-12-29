@@ -36,7 +36,7 @@ type Job struct {
 	Args []string
 	// Target docker image.
 	Image string
-      // Target resources.
+	// Target resources.
 	Resources corev1.ResourceRequirements
 	// Target namespace
 	Namespace string
@@ -237,18 +237,49 @@ func (j *Job) WaitJob(ctx context.Context, job *v1.Job, ignoreSidecar bool) erro
 // If the job is failed, this function returns error.
 // If the job is succeeded, this function returns nil.
 func (j *Job) WaitJobComplete(ctx context.Context, job *v1.Job, ignoreSidecar bool) error {
+	log.WithContext(ctx).WithFields(log.Fields{
+		"job":           job.Name,
+		"ignoreSidecar": ignoreSidecar,
+	}).Debug("WaitJobComplete start")
 retry:
 	for {
 		time.Sleep(3 * time.Second)
 		running, err := j.client.BatchV1().Jobs(job.Namespace).Get(ctx, job.Name, metav1.GetOptions{})
+		runningName := ""
+		if err == nil {
+			runningName = running.Name
+		}
+		log.WithContext(ctx).WithFields(log.Fields{
+			"runningName": runningName,
+			"err":         err,
+		}).Debug("WaitJobComplete Get")
 		if err != nil {
 			return err
 		}
 		if running.Status.Active == 0 && (running.Status.Succeeded == 1 || running.Status.Failed == 1) {
+			log.WithContext(ctx).WithFields(log.Fields{
+				"running.Name":  running.Name,
+				"jobConditions": checkJobConditions(running.Status.Conditions),
+			}).Debug("WaitJobComplete finished")
 			return checkJobConditions(running.Status.Conditions)
 		}
 		if ignoreSidecar {
+			log.WithContext(ctx).WithFields(log.Fields{
+				"running.Name":  running.Name,
+				"ignoreSidecar": ignoreSidecar,
+			}).Debug("WaitJobComplete ignoreSidecar")
 			pods, err := j.FindPods(ctx, running)
+			podNames := []string{}
+			if err == nil {
+				for _, pod := range pods {
+					podNames = append(podNames, pod.Name)
+				}
+			}
+			log.WithContext(ctx).WithFields(log.Fields{
+				"running.Name": running.Name,
+				"podNames":     podNames,
+				"err":          err,
+			}).Debug("WaitJobComplete FindPods")
 			if err != nil {
 				return err
 			}
@@ -291,29 +322,49 @@ func checkJobConditions(conditions []v1.JobCondition) error {
 // checkPodConditions check all pods related a job.
 // Returns true, if all containers in the pods which are matched container name is completed.
 func checkPodConditions(pods []corev1.Pod, containerName string) (bool, error) {
+	podNames := []string{}
 	results := []bool{}
 	errs := []error{}
 	for _, pod := range pods {
 		if podIncludeContainer(pod, containerName) {
 			finished, err := containerIsCompleted(pod, containerName)
+			podNames = append(podNames, pod.Name)
 			results = append(results, finished)
 			errs = append(errs, err)
 		}
 	}
+	log.WithFields(log.Fields{
+		"podNames": podNames,
+		"results":  results,
+		"errs":     errs,
+	}).Debug("checkPodConditions check result")
 	if len(results) == 0 {
 		return false, nil
 	}
-	for _, r := range results {
+	for i, r := range results {
 		if !r {
+			log.WithFields(log.Fields{
+				"podName":     podNames[i],
+				"result":      r,
+				"returnValue": false,
+			}).Debug("checkPodConditions result false")
 			return false, nil
 		}
 	}
 	var err error
-	for _, e := range errs {
+	for i, e := range errs {
 		if e != nil {
+			log.WithFields(log.Fields{
+				"podName": podNames[i],
+				"error":   e,
+			}).Debug("checkPodConditions error")
 			err = e
 		}
 	}
+	log.WithFields(log.Fields{
+		"err":         err,
+		"returnValue": true,
+	}).Debug("checkPodConditions finished")
 	return true, err
 }
 
@@ -353,6 +404,10 @@ func (j *Job) Cleanup() error {
 	log.Infof("Removing the job: %s", j.CurrentJob.Name)
 	options := metav1.DeleteOptions{}
 	err := j.client.BatchV1().Jobs(j.CurrentJob.Namespace).Delete(ctx, j.CurrentJob.Name, options)
+	log.WithContext(ctx).WithFields(log.Fields{
+		"jobName": j.CurrentJob.Name,
+		"err":     err,
+	}).Debug("Delete job")
 	if err != nil {
 		return err
 	}
