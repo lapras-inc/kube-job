@@ -34,7 +34,9 @@ windows: mod
 	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_windows_amd64.zip $(OUTPUT).exe
 
 test:
-	go test -cover -v ./pkg/...
+	mkdir -p coverage
+	go test -coverprofile=coverage/coverage.out -cover -v ./pkg/...
+	go tool cover -html=coverage.out -o coverage/reports.html
 
 e2e: build
 	which kind ginkgo > /dev/null

@@ -2,9 +2,10 @@
 Package job provides simple functions to run a job on kubernetes.
 
 Usage:
-    import "github.com/h3poteto/kube-job/pkg/job"
 
-Run a job overriding the commands
+	import "github.com/h3poteto/kube-job/pkg/job"
+
+# Run a job overriding the commands
 
 When you want to run a job on kubernetes, please use this package as follows.
 
@@ -12,37 +13,36 @@ At first, you have to prepare yaml for job, and provide a command to override th
 
 For example:
 
-    j, err := job.NewJob("$HOME/.kube/config", "job-template.yaml", "echo hoge", "target-container-name", 0 * time.Second)
-    if err != nil {
-        return err
-    }
+	j, err := job.NewJob("$HOME/.kube/config", "job-template.yaml", "echo hoge", "target-container-name", 0 * time.Second)
+	if err != nil {
+	    return err
+	}
 
-    // Run the job
-    running, err := j.RunJob()
-    if err != nil {
-        return err
-    }
+	// Run the job
+	running, err := j.RunJob()
+	if err != nil {
+	    return err
+	}
 
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-    err = j.WaitJob(ctx, running)
+	err = j.WaitJob(ctx, running)
 
-Polling the logs
+# Polling the logs
 
 You can polling the logs with stream.
 
 For example:
 
-    // j is a Job struct
-    watcher := NewWatcher(j.client, j.Container)
+	// j is a Job struct
+	watcher := NewWatcher(j.client, j.Container)
 
-    // running is a batchv1.Job struct
-    err := watcher.Watch(running, ctx)
-    if err != nil {
-        return err
-    }
-
+	// running is a batchv1.Job struct
+	err := watcher.Watch(running, ctx)
+	if err != nil {
+	    return err
+	}
 */
 package job
 
@@ -71,10 +71,17 @@ func (c CleanupType) String() string {
 
 // Run a command on kubernetes cluster, and watch the log.
 func (j *Job) Run(ignoreSidecar bool) error {
+	log.WithFields(log.Fields{
+		"ignoreSidecar": ignoreSidecar,
+	}).Debug("Run start")
 	if ignoreSidecar {
 		log.Info("Ignore sidecar containers")
 	}
 	running, err := j.RunJob()
+	log.WithFields(log.Fields{
+		"running": running,
+		"err":     err,
+	}).Debug("RunJob")
 	if err != nil {
 		log.Error(err)
 		return err
@@ -82,20 +89,39 @@ func (j *Job) Run(ignoreSidecar bool) error {
 	log.Infof("Starting job: %s", running.Name)
 	ctx, cancel := context.WithCancel(context.Background())
 	if j.Timeout != 0 {
+		log.WithContext(ctx).WithFields(log.Fields{
+			"timeout": j.Timeout,
+		}).Debug("Set timeout")
 		ctx, cancel = context.WithTimeout(context.Background(), j.Timeout)
 	}
 	defer cancel()
 
 	watcher := NewWatcher(j.client, j.Container)
+	log.WithFields(log.Fields{
+		"watcher": watcher,
+	}).Debug("NewWatcher")
+
 	go func() {
+		log.WithContext(ctx).WithFields(log.Fields{
+			"running": running,
+		}).Debug("Watch start")
 		err := watcher.Watch(running, ctx)
+		log.WithContext(ctx).WithFields(log.Fields{
+			"running": running,
+			"err":     err,
+		}).Debug("Watch finished")
 		if err != nil {
 			log.Error(err)
 		}
 	}()
 
+	log.WithContext(ctx).Debug("WaitJob start")
 	err = j.WaitJob(ctx, running, ignoreSidecar)
+	log.WithContext(ctx).Debug("WaitJob finished")
 	time.Sleep(10 * time.Second)
+	log.WithContext(ctx).WithFields(log.Fields{
+		"err": err,
+	}).Debug("Run finished")
 	return err
 }
 
