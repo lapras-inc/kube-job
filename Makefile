@@ -11,7 +11,7 @@ BUILD_CMD = go build -a -tags netgo -installsuffix netgo -ldflags \
 "
 VERSION = $(shell git describe --tag --abbrev=0)
 
-all: mac linux windows macarm
+all: mac linux linuxarm64 windows macarm
 
 mod: go.mod
 	go mod download
@@ -28,6 +28,10 @@ macarm: mod
 linux: mod
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(BUILD_CMD) -o $(OUTPUT)
 	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_linux_amd64.zip $(OUTPUT)
+
+linuxarm64: mod
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(BUILD_CMD) -o $(OUTPUT)
+	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_linux_arm64.zip $(OUTPUT)
 
 windows: mod
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(BUILD_CMD) -o $(OUTPUT).exe
