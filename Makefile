@@ -40,7 +40,7 @@ windows: mod
 test:
 	mkdir -p coverage
 	go test -coverprofile=coverage/coverage.out -cover -v ./pkg/...
-	go tool cover -html=coverage.out -o coverage/reports.html
+	go tool cover -html=coverage/coverage.out -o coverage/reports.html
 
 e2e: build
 	which kind ginkgo > /dev/null
