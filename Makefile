@@ -1,4 +1,4 @@
-.PHONY: all mod build
+.PHONY: all mod build mac macarm linux linuxarm64 windows test e2e
 
 OUTPUT = kube-job
 OUTDIR = bin
