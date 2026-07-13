@@ -1,4 +1,4 @@
-.PHONY: all mod build
+.PHONY: all mod build mac macarm linux linuxarm64 windows test e2e
 
 OUTPUT = kube-job
 OUTDIR = bin
@@ -11,7 +11,7 @@ BUILD_CMD = go build -a -tags netgo -installsuffix netgo -ldflags \
 "
 VERSION = $(shell git describe --tag --abbrev=0)
 
-all: mac linux windows macarm
+all: mac linux linuxarm64 windows macarm
 
 mod: go.mod
 	go mod download
@@ -29,6 +29,10 @@ linux: mod
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(BUILD_CMD) -o $(OUTPUT)
 	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_linux_amd64.zip $(OUTPUT)
 
+linuxarm64: mod
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(BUILD_CMD) -o $(OUTPUT)
+	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_linux_arm64.zip $(OUTPUT)
+
 windows: mod
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(BUILD_CMD) -o $(OUTPUT).exe
 	zip $(OUTDIR)/$(OUTPUT)_${VERSION}_windows_amd64.zip $(OUTPUT).exe
@@ -36,7 +40,7 @@ windows: mod
 test:
 	mkdir -p coverage
 	go test -coverprofile=coverage/coverage.out -cover -v ./pkg/...
-	go tool cover -html=coverage.out -o coverage/reports.html
+	go tool cover -html=coverage/coverage.out -o coverage/reports.html
 
 e2e: build
 	which kind ginkgo > /dev/null
